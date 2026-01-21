@@ -1,0 +1,86 @@
+from pathlib import Path
+import joblib
+import pandas as pd
+import numpy as np
+
+# ------------------------------
+# Paths
+# ------------------------------
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODELS_DIR = BASE_DIR / "models"
+
+SCALER_PATH = MODELS_DIR / "scaler.pkl"
+MODEL_PATH = MODELS_DIR / "fraud_model_xgb.pkl"
+
+scaler = joblib.load(SCALER_PATH)
+model = joblib.load(MODEL_PATH)
+
+# ------------------------------
+# Feature columns (exact ca în dataset)
+# ------------------------------
+FEATURE_COLUMNS = [
+    "Time",
+    "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9",
+    "V10", "V11", "V12", "V13", "V14", "V15", "V16", "V17", "V18", "V19",
+    "V20", "V21", "V22", "V23", "V24", "V25", "V26", "V27", "V28",
+    "Amount"
+]
+
+SCALER_FEATURES = getattr(scaler, "n_features_in_", None)
+
+
+def prepare_transaction(amount: float, time: float) -> pd.DataFrame:
+    """
+    Creează o tranzacție manuală:
+    - V1..V28 = 0 (neutru)
+    - Time, Amount = introduse de utilizator
+    """
+    tx = {col: 0 for col in FEATURE_COLUMNS}
+    tx["Amount"] = amount
+    tx["Time"] = time
+
+    df = pd.DataFrame([tx])
+
+    # scaling conform cu ce a fost folosit la antrenare
+    if SCALER_FEATURES == 30:
+        df[FEATURE_COLUMNS] = scaler.transform(df[FEATURE_COLUMNS])
+    else:
+        df[["Time", "Amount"]] = scaler.transform(df[["Time", "Amount"]])
+
+    return df
+
+
+def predict_manual_transaction(amount: float, time: float, threshold: float = 0.5):
+    df_tx = prepare_transaction(amount, time)
+
+    X = df_tx[FEATURE_COLUMNS].to_numpy()
+    proba = model.predict_proba(X)[:, 1][0]
+    pred = 1 if proba >= threshold else 0
+
+    return pred, proba
+
+
+def main():
+    print("=== MANUAL FRAUD CHECK ===")
+    print("Introduce o tranzacție pentru verificare\n")
+
+    try:
+        amount = float(input("Introdu suma (Amount): "))
+        time = float(input("Introdu timpul (Time, în secunde): "))
+    except ValueError:
+        print("❌ Valori invalide. Te rog introdu numere.")
+        return
+
+    pred, proba = predict_manual_transaction(amount, time, threshold=0.5)
+
+    print("\n=== REZULTAT ===")
+    print(f"Probabilitate fraudă: {proba:.4f}")
+
+    if pred == 1:
+        print("⚠️ TRANZACȚIE SUSPECTĂ (FRAUDĂ)")
+    else:
+        print("✅ TRANZACȚIE NORMALĂ (NON-FRAUDĂ)")
+
+
+if __name__ == "__main__":
+    main()
